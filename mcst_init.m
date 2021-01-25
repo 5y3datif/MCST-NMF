@@ -57,7 +57,8 @@ function [W,H,O,lambdaA,lambdaAR,e,t] = mcst_init(X,A,L,k,options)
     HHt = H*H'; 
     XHt = X*H'; 
     scaling = sum(sum(XHt.*W))/sum(sum( (W'*W).*(HHt) )); 
-    W = W*scaling; 
+    W = W*scaling;
+    
     % compute k Hp matrices
     sz_L = size(L,2);
     Hp = zeros(k,sz_L,T);
