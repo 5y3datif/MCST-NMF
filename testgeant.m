@@ -15,7 +15,7 @@ n = 529;
 % number of nodes.
 nodes = sqrt(n);
 % number of timestamp.
-TT = 11*96;
+TT = 0*96;
 T = 11*96;
 Ttrain = 7*96;
 Ttest = 4*96;
@@ -29,17 +29,14 @@ Xtest = X(:,Ttrain+1:T);
 Y = A*X;
 Ytrain = A*Xtrain;
 Ytest = A*Xtest;
-% Timestamps in training and testing sets.
-Ttrain = size(Xtrain,2);
-Ttest = size(Xtest,2);
 % rank of factorization.
 k = 20;
 % Define the lag set.
 L = [1, 4, 8, 32, 34, 36, 96];
 %% Initializition of free parameter.
 options = [];
-options.betas.betaA = 0.6;
-options.betas.betaAR = 0.2;
+options.betas.betaA = 0.1;
+options.betas.betaAR = 0.1;
 [W0,H0,Omega0,lambdaA,lambdaAR,einit,timeinit] = mcst_init(Xtrain,A,L,k,options);
 %% Train model using iterative algorithm
 options = [];
@@ -51,7 +48,70 @@ options.lambdas.lambdaAR = lambdaAR;
 [W,H,O,cnt,etrain,timetrain] = mcst_training(Xtrain,A,L,k,options);
 %% Estimation of OD flows.
 Xtesthat = X(:,Ttrain+1:T);
-for t=1:1:T
+for t=1:1:Ttest
     yt = Ytest(:,t);
     Xtesthat(:,t) = mcst_estimation(W,A,yt);
 end
+%% Analyse results.
+err = Xtesthat-Xtest;
+sq_X = Xtest.^2;
+sq_err = err.^2;
+nrm_err_TRE = sqrt(sum(sq_err));
+nrm_err_SRE = sqrt(sum(sq_err,2));
+nrm_X_TRE = sqrt(sum(sq_X));
+nrm_X_SRE = sqrt(sum(sq_X,2));
+TRE = nrm_err_TRE./nrm_X_TRE;
+SRE = nrm_err_SRE./nrm_X_SRE;
+pd_SRE = fitdist(SRE,'Kernel');
+sort_SRE = 0:0.01:1.8;
+CDF_SRE = cdf(pd_SRE,sort_SRE);
+pd_TRE = fitdist(TRE','Kernel');
+sort_TRE = 0:0.01:0.4;
+CDF_TRE = cdf(pd_TRE,sort_TRE);
+[mean_od,mean_od_ind]=sort(mean(X,2));
+bias_od=(1/Ttest)*sum(err,2);
+bias_od=bias_od(mean_od_ind);
+sd_od=sqrt((1/(Ttest-1))*sum(((err-diag(bias_od)*ones(n,Ttest)).^2),2));
+sd_od=sd_od(mean_od_ind);
+%% CDF SRE TRE
+figure
+plot(sort_SRE,CDF_SRE,'-b','LineWidth',2);
+title('CDF of SRE');
+xlabel('SRE (from lowest to highest)');
+ylabel('F(SRE)');
+grid minor;
+axis([0.2 1.2 0.1 0.95]);
+set(gca,'XMinorTick','on','YMinorTick','on','XScale','log','YScale','log');
+
+figure
+plot(sort_TRE,CDF_TRE,'-b','LineWidth',2);
+title('CDF of TRE');
+xlabel('TRE (from lowest to highest)');
+ylabel('F(TRE)');
+grid minor;
+axis([0.09 0.24 0.1 0.98]);
+set(gca,'XMinorTick','on','YMinorTick','on','XScale','log','YScale','log');
+%% Bias and Standard Deviation
+figure
+scatter(mean_od,bias_od,'MarkerFaceColor','b','MarkerEdgeColor','b',...
+        'LineWidth',2);
+title('Bias vs Means of OD flows (sorted from lowest to highest)');
+xlabel('Mean of OD flows');
+ylabel('Bias');
+grid minor;
+xlim([1,10e5]);
+set(gca,'XMinorTick','on','YMinorTick','on','XAxisLocation','origin',...
+    'XScale','log',...
+    'Layer','top','Box', 'on');
+
+figure
+scatter(sd_od,bias_od,'MarkerFaceColor','b','MarkerEdgeColor','b',...
+        'LineWidth',2);
+title('Bias vs Standard Deviation of OD flows (sorted from lowest to highest)');
+xlabel('Standard Deviation of OD flows');
+ylabel('Bias');
+grid minor;
+xlim([1,10e5]);
+set(gca,'XMinorTick','on','YMinorTick','on','XAxisLocation','origin',...
+    'XScale','log',...
+    'Layer','top','Box', 'on');
