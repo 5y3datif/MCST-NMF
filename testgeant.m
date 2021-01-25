@@ -3,8 +3,9 @@ clear all;
 addpath('.\support\nnsvd-lrcv2');
 %% Add paths for support files
 addpath('.\datasets\geant_preprocessed');
+addpath('.\datasets\geant_raw');
 %% Load Geant dataset.
-TM = load('Geant_TM_with_filled_miss_data.mat');
+TM = load('Geant_TM_with_miss_data.mat');
 R = open('Geant_routing_table.mat');
 %% Initialing setup.
 % Training and testing data
@@ -22,7 +23,8 @@ Ttest = 4*96;
 % m*n routing matrix.
 A = R.A;
 % n*t OD flows matrices.
-X = TM.TM_with_filled_miss_data(:,TT+1:TT+T);
+X = TM.TM_with_miss_data(:,TT+1:TT+T);
+X = (X > 0).*X;
 Xtrain = X(:,1:Ttrain); 
 Xtest = X(:,Ttrain+1:T);
 % m*t link flows matrices.
@@ -34,18 +36,20 @@ k = 20;
 % Define the lag set.
 L = [1, 4, 8, 32, 34, 36, 96];
 %% Initializition of free parameter.
+Xtrain = (Xtrain > 0).*Xtrain;
 options = [];
 options.betas.betaA = 0.1;
 options.betas.betaAR = 0.1;
 [W0,H0,Omega0,lambdaA,lambdaAR,einit,timeinit] = mcst_init(Xtrain,A,L,k,options);
 %% Train model using iterative algorithm
 options = [];
+options.M = (Xtrain > 0);
 options.init.W = W0;
 options.init.H = H0;
 options.init.O = Omega0;
 options.lambdas.lambdaA = lambdaA;
 options.lambdas.lambdaAR = lambdaAR;
-[W,H,O,cnt,etrain,timetrain] = mcst_training(Xtrain,A,L,k,options);
+[W,H,O,cnt,etrain,timetrain] = mcst_nmc_training(Xtrain,A,L,k,options);
 %% Estimation of OD flows.
 Xtesthat = X(:,Ttrain+1:T);
 for t=1:1:Ttest
@@ -53,13 +57,22 @@ for t=1:1:Ttest
     Xtesthat(:,t) = mcst_estimation(W,A,yt);
 end
 %% Analyse results.
-err = Xtesthat-Xtest;
+addpath('.\datasets\geant_raw');
+TM = load('Geant_TM_with_miss_data.mat');
+X = TM.TM_with_miss_data(:,TT+1:TT+T);
+Xtrain = X(:,1:Ttrain); 
+Xtest = X(:,Ttrain+1:T);
+err = Xtesthat-(Xtest > 0).*Xtest;
 sq_X = Xtest.^2;
 sq_err = err.^2;
 nrm_err_TRE = sqrt(sum(sq_err));
 nrm_err_SRE = sqrt(sum(sq_err,2));
 nrm_X_TRE = sqrt(sum(sq_X));
+nrm_X_TRE = (nrm_X_TRE > 0).*nrm_X_TRE + ...
+   (nrm_X_TRE <= 0).*(ones(size(nrm_X_TRE))); % Avoid diviion by zero
 nrm_X_SRE = sqrt(sum(sq_X,2));
+nrm_X_SRE = (nrm_X_SRE > 0).*nrm_X_SRE + ...
+  (nrm_X_SRE <= 0).*(ones(size(nrm_X_SRE))); % Avoid diviion by zero
 TRE = nrm_err_TRE./nrm_X_TRE;
 SRE = nrm_err_SRE./nrm_X_SRE;
 pd_SRE = fitdist(SRE,'Kernel');
