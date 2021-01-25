@@ -6,11 +6,7 @@
 % Technology, Karachi, Pakistan.
 % Latest update December 2020
 %
-% Graph laplacian matrices are sparse. This is not a very efficient 
-% implementation. One may consider an alternative implementation by
-% considering sparsity in the matrices. 
-%
-% Input
+% Input:
 %     O: Omega matrix
 %     L: lag set
 %     k: factorization rank
@@ -20,46 +16,55 @@
 %      Lg: k T by T graph laplacian matrices.
 %   nrmLg: corresponding Frobenius norm. normest is used faster computation
 %          as graph laplacian matrices are sparse. 
-function [Lg,nrm_Lg] = graph_laplacian(O,L,T,k,eta)
+function [Lg,nrmLg] = graph_laplacian(O,L,T,k,eta)
     if nargin < 5, eta = 1e-3; end
-    sz_L = size(L,2);
-    max_L = max(L);
-    L_bar = zeros(1,(sz_L+1));
-    L_bar(2:sz_L+1) = L;
-    O_ext = zeros(k,(sz_L+1));
-    O_ext(:,1) = -1*ones(k,1);
-    O_ext(:,2:sz_L+1) = O;
-    sum_O_ext = sum(O_ext,2);
-    G_AR = zeros(k,T,T);
-    D = zeros(k,T,T);
-    Lg = zeros(k,T,T);
-    nrm_Lg =zeros(1,k);
+    szL = size(L,2);
+    maxL = max(L);
+    Lbar = zeros(1,(szL+1));
+    Lbar(2:szL+1) = L;
+    Oext = zeros(k,(szL+1));
+    Oext(:,1) = -1*ones(k,1);
+    Oext(:,2:szL+1) = O;
+    sumOext = sum(Oext,2);
+    GARidx = zeros(floor(0.1*T*T),2);
+    GARval = zeros(floor(0.1*T*T),k);
+    Didx = zeros(T,2);
+    Dval = zeros(T,k);
+    Lg = cell(k,1);
+    nrmLg = zeros(1,k);
     % Similarity and diagonal matrices.
+    tic;
+    cnt1 = 1;
+    cnt2 = 1;
     for t=1:1:T
-        ptt_l = L_bar(1,((L_bar > (max_L-t)) & (L_bar <= (T-t))));
-        for d=1:1:max_L
+        ptt_l = Lbar(1,((Lbar > (maxL-t)) & (Lbar <= (T-t))));
+        for d=1:1:maxL
             t1 = t+d;
             if(t1<=T)
                 ptt_l_minus_d = ptt_l-d;
-                [l_minus_d,l_minus_d_idx,~] = intersect(L_bar,ptt_l_minus_d);
+                [l_minus_d,l_minus_d_idx,~] = intersect(Lbar,ptt_l_minus_d);
                 if(~isempty(l_minus_d))
                     l = l_minus_d + d;
-                    [~,l_idx,~] = intersect(L_bar,l);
-                    G_AR(:,t,t1) = G_AR(:,t,t1) - ...
-                        sum(O_ext(:,l_idx).*O_ext(:,l_minus_d_idx),2);
+                    [~,l_idx,~] = intersect(Lbar,l);
+                    GARidx(cnt1,:) = [t,t1];
+                    GARval(cnt1,:) = -1*sum(Oext(:,l_idx).*Oext(:,l_minus_d_idx),2);
+                    cnt1 = cnt1 + 1;
                 end
             end
         end
-        l = L_bar(1,((L_bar > (max_L-t)) & (L_bar <= (T-t))));
-        [~,l_idx,~] = intersect(L_bar,l);
-        D(:,t,t) = D(:,t,t) + sum_O_ext.*sum(O_ext(:,l_idx),2);
+        l = Lbar(1,((Lbar > (maxL-t)) & (Lbar <= (T-t))));
+        [~,l_idx,~] = intersect(Lbar,l);
+        Didx(cnt2,:) = [t,t];
+        Dval(cnt2,:) = sumOext.*sum(Oext(:,l_idx),2);
+        cnt2 = cnt2 + 1;
     end
     % Graph laplacian matrices and their corresponding Frobenius norm
     for p=1:1:k
-        temp = reshape(G_AR(p,:,:),T,T);
-        temp1 = diag(sum(temp,2)) -1*(temp - diag(diag(temp))) + ...
-            reshape(D(p,:,:),T,T) + eta*eye(T,T);
-        nrm_Lg(1,p) = normest(temp1,1e-2);
-        Lg(p,:,:) = temp1;
+        temp2 = sparse(GARidx(1:(cnt1-1),1), GARidx(1:(cnt1-1),2), GARval(1:(cnt1-1),p),T,T);
+        temp3 = sparse(Didx(1:(cnt2-1),1), Didx(1:(cnt2-1),2), Dval(1:(cnt2-1),p),T,T);
+        temp4 = diag(sum(temp2,2)) -1*(temp2 - diag(diag(temp2))) + ...
+                    temp3 + eta*speye(T,T);
+        nrmLg(1,p) = normest(temp4,1e-2);
+        Lg{p} = temp4;
     end
 end
