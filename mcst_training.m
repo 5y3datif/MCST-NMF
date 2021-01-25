@@ -136,7 +136,7 @@ function [W,H,O,q,e,t] = mcst_nmc_training(X,A,L,k,options)
         end
         % Prepare for update of H
         WtW = W'*W; WtX = W'*X;
-        [Lg, nrm_Lg] = graph_laplacian_sparse(O,L,T,k);
+        [Lg, nrm_Lg] = graph_laplacian(O,L,T,k);
         Lh = norm(WtW) + lambdaAR*sum(nrm_Lg,'all');
         eprev = sumSqX - 2*sum(W.*XHt,'all') + sum(WtW.*HHt,'all');
         alphaprevH = 1; qH = 1; epsinnmin = deltaH*eprev; Hcurr = H; V = H; 
