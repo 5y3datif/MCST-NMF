@@ -27,6 +27,11 @@
 %          exit occur due to meeting stopping criteion for outer loop).
 
 function [xhatt,q,r] = mcst_estimation(W,A,yt,qmax,rmax,deltagd,deltaemi)
+    if nargin < 4, qmax = 200; end
+    if nargin < 5, rmax = 200; end
+    if nargin < 6, deltagd = 1e-3; end
+    if nargin < 7, deltaemi = 1e-9; end
+    n = size(W,1);
     sum_col_A_inv = (sum(A)).^(-1);
     cmptA = A*W; cmptAtcmptA = cmptA'*cmptA; L = norm(cmptAtcmptA);
     y = yt; ht = cmptA'*y;
@@ -35,12 +40,12 @@ function [xhatt,q,r] = mcst_estimation(W,A,yt,qmax,rmax,deltagd,deltaemi)
     eprev = (temp'*temp);   
     % Fast gradient step.
     q = 1; alphaprev  =1; vt = ht; htcurr = ht; 
-    epsgd = 0; epsgdmin = deltagd*eprev;
+    epsgd = 0; epsgdmin = deltagd*(y'*y);
     while((q == 1) || ((q <= qmax) && ((epsgd < 0) || (epsgd >= epsgdmin))))
         % Update ht
         Gradh = 2*(cmptAtcmptA*vt - cmptAty);
         ht = max((vt - (1/L)*Gradh),0);
-        alpha = (1 + sqrt( 4*alpha_prev + 1 ))/2;
+        alpha = (1 + sqrt( 4*alphaprev + 1 ))/2;
         vt = ht + ((alphaprev - 1)/(alpha))*(ht - htcurr);
         % compute error
         temp = y - cmptA*vt; ecurr = (temp'*temp); epsgd = eprev - ecurr;
@@ -57,11 +62,18 @@ function [xhatt,q,r] = mcst_estimation(W,A,yt,qmax,rmax,deltagd,deltaemi)
     while((r == 1) || ...
             ((r <= rmax) && ((epsemi < 0) || (epsemi >= epsemimin))))
         x_prev = x;
+        % Replacing zero entries with small numbers
+        x = x.*(x > 1e-5) + 1e-5*(x <= 1e-5); 
+        % Replacing zero entries with small numbers
+        y = y.*(y > 1e-5) + 1e-5*(y <= 1e-5);    
+        
+        
+        
         for idx = 1:1:n
             temp1 = A(:,idx).*y; A_x_inv = (A*x).^(-1);
             x(idx) = sum_col_A_inv(idx)*x(idx)*sum(A_x_inv.*temp1);
         end
-        epsemi = (1/nrm_x)*(x-x_prev)'*(x-x_prev); r = r + 1;
+        epsemi = (x-x_prev)'*(x-x_prev); r = r + 1;
     end
     xhatt = x;
 end
