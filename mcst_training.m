@@ -12,8 +12,11 @@
 %   A: routng matrix of the underlying network
 %   L: lag set for autoregression regularization in an array
 %   k: factorization rank
-%   options: a structure including  
-%            'init.W', 'init.H', 'init.H' (initial points of U, V and O)
+%   options: a structure including
+%            'M' (binary matrix of n by T indicating observed and 
+%                 unobserved OD flows in X. 1 indicate observed OD flow 
+%                 whereas 0 indicate unobserved OD flow)
+%            'init.W', 'init.H', 'init.O' (initial points of U, V and O)
 %            'maxitrs.qmax' (maximum number of iterations. 
 %                          By default qmax = 50)
 %            'maxitrs.qWmax', 'maxitrs.qHmax', 'maxitrs.qOmax' (maximum 
@@ -37,7 +40,7 @@
 %        e: sequence of squared fitting errors
 %        t: corresponding running time
 
-function [W,H,O,q,e,t] = mcst_training(X,A,L,k,options)
+function [W,H,O,q,e,t] = mcst_nmc_training(X,A,L,k,options)
     cputime0 = tic;
     [n,T] = size(X);
     sz_L = size(L,2);
@@ -104,10 +107,17 @@ function [W,H,O,q,e,t] = mcst_training(X,A,L,k,options)
     q = 1; eps = 0; eprev = e(1); epsmin = delta*eprev;
     while(((q == 1) && (t(q) < timemax)) || ...
          ((q <= qmax) && (t(q) < timemax) && (( eps < 0) || ( eps >= epsmin))))
-        %% Prepare for update of W
+        %% Expectation step of Expectation Maximization for handling 
+        %  missing data
+        if isfield(options,'M')
+            X = (options.M).*X + (ones(n,T) - (options.M)).*(W*H);
+        end
+        %% Maximization step of Expectation Maximization for handling 
+        %  missing data
+        % Prepare for update of W
         Lw = norm(HHt); alphaprevW = 1; Wcurr = W; U = W;
         qW = 1; epsinnmin = deltaW*e(q); 
-        %% Update W
+        % Update W
         while((qW == 1) || ((qW <= qWmax) && ...
                 (( epsinn < 0) || ...
                 ( epsinn >= epsinnmin))))
@@ -124,23 +134,22 @@ function [W,H,O,q,e,t] = mcst_training(X,A,L,k,options)
             end
             Wcurr = W; alphaprevW = alphaW; eprev = ecurr; qW = qW + 1;
         end
-        %% Prepare for update of H
+        % Prepare for update of H
         WtW = W'*W; WtX = W'*X;
-        [Lg, nrm_Lg] = graph_laplacian(O,L,T,k);
+        [Lg, nrm_Lg] = graph_laplacian_sparse(O,L,T,k);
         Lh = norm(WtW) + lambdaAR*sum(nrm_Lg,'all');
         eprev = sumSqX - 2*sum(W.*XHt,'all') + sum(WtW.*HHt,'all');
         alphaprevH = 1; qH = 1; epsinnmin = deltaH*eprev; Hcurr = H; V = H; 
-        %% Update H
+        % Update H
         while((qH == 1) || ...
                 (( qH <= qHmax) && ... 
                 (( epsinn < 0) || ...
                 ( epsinn >= epsinnmin))))
             GradH = 2*(WtW*V - WtX);
-%             for p=1:1:k
-%                 Lgp = reshape(Lg(p,:,:),T,T);
-%                 GradH(p,:) = GradH(p,:) + lamAR*V(p,:)*(Lgp' + Lgp);
-%             end
-            GradH = GradH + lambdaAR*(sum(reshape(V,k,1,T).*(permute(Lg, [1,3,2]) + Lg),3));
+            for p=1:1:k
+                GradH(p,:) = GradH(p,:) + lambdaAR*V(p,:)*(Lg{p}' + Lg{p});
+            end
+%             GradH = GradH + lambdaAR*(sum(reshape(V,k,1,T).*(permute(Lg, [1,3,2]) + Lg),3));
             H = max((V - (1/Lh)*GradH),0);
             alphaH = (1 + sqrt( 4*alphaprevH + 1 ))/2;
             V = H + ((alphaprevH - 1)/(alphaH))*(H - Hcurr);
@@ -152,7 +161,7 @@ function [W,H,O,q,e,t] = mcst_training(X,A,L,k,options)
             end
             Hcurr = H; alphaprevH = alphaH; eprev = ecurr; qH = qH + 1;
         end       
-        %% Prepare for update of O (Omega)
+        % Prepare for update of O (Omega)
         HHt = H*H'; XHt = X*H';
         for idx = 1:sz_L 
             Hlag(:,idx,1+L(idx):T) = H(:,1:T-L(idx)); 
@@ -177,7 +186,7 @@ function [W,H,O,q,e,t] = mcst_training(X,A,L,k,options)
               - 2*sum(reshape(H,k,1,T).*(sum(reshape(O, k, sz_L, 1).*Hlag,2)),'all')...
               + sum((reshape(O, k, 1 , sz_L).*reshape(O, k, sz_L, 1)).*HpHpt,'all');
         alphaprevO = 1; qO = 1; epsinnmin = deltaO*eprev; O_curr = O; P = O;
-        %% Update Omega 
+        % Update Omega 
         while((qO == 1) || ...
                 (( qO <= qOmax) && ... 
                 (( epsinn < 0) || ...
@@ -201,10 +210,10 @@ function [W,H,O,q,e,t] = mcst_training(X,A,L,k,options)
             O_curr = O; alphaprevO = alphaO; eprev = ecurr; qO = qO+1;
         end
         %% Compute error
-        time1=tic;
+        %time1=tic;
         e(q+1) = sumSqX - 2*sum(W.*XHt,'all') + sum(WtW.*HHt,'all');
         eps = e(q) - e(q+1);
-        time_err=time_err + toc(time1); t(q+1) = toc(cputime0)-time_err;
+        %time_err=time_err + toc(time1); t(q+1) = toc(cputime0)-time_err;
         %% Prepare for the next iteration
         q = q+1;        
     end    
