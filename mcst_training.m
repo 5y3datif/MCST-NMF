@@ -40,7 +40,7 @@
 %        e: sequence of squared fitting errors
 %        t: corresponding running time
 
-function [W,H,O,q,e,t] = mcst_nmc_training(X,A,L,k,options)
+function [W,H,O,q,e,t] = mcst_training(X,A,L,k,options)
     cputime0 = tic;
     [n,T] = size(X);
     sz_L = size(L,2);
